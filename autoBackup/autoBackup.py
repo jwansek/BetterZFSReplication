@@ -179,7 +179,7 @@ def main():
     if was_already_on:
         logging.info("The slave TrueNAS was turned on not by us, so stopping here")
     else:
-        logging.info("The slave TrueNAS was turned on my us, so starting the shutdown procedure")
+        logging.info("The slave TrueNAS was turned on by us, so starting the shutdown procedure")
         logging.info(json.dumps(slave.shutdown(), indent = 4))
 
         # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
