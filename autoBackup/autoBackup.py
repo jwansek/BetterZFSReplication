@@ -77,7 +77,7 @@ class TrueNASAPIClient:
         return self.base_get("/system/ready")
     
     def shutdown(self):
-        req = requests.post(self.base_url + "/system/shutdown", headers = self.headers)
+        req = requests.post(self.base_url + "/system/shutdown", headers = self.headers, json = {"reason": "Automatic autoBackup shutdown"})
         if not req.status_code == 200:
             raise ConnectionError("API call failed (%d): '%s'" % (req.status_code, req.content.decode()))
         return req.json()
