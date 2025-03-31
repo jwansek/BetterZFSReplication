@@ -20,9 +20,9 @@ it is shut down, and once the plug is pulling 0w, which implies the TrueNAS has 
 If the Tasmota MQTT plug was already on when the script starts, it implies that the `slave` TrueNAS was started manually, so it won't automatically
 be switched off.
 
-It is recommended to run ZFS scrub tasks manually occasionally, otherwise they probably won't be run by TrueNAS.
+It is recommended to run ZFS scrub tasks manually occasionally, since they probably won't be run automatically by TrueNAS.
 
 A Dockerfile is provided so you can automatically run this script as a cronjob.
 
-The MQTT Tamsmota stuff is pretty specific to my setup so might not be too useful to others; but the TrueNAS API stuff might be useful to other people. It probably wouldn't be too hard to make this work with wake-on-lan instead. We are using the HTTP API instead of the sockets API, since the sockets API seems to change quite a lot. We use standard TrueNAS API keys.
+The MQTT Tasmota stuff is pretty specific to my setup so might not be too useful to others; but the TrueNAS API stuff might be useful to other people. It probably wouldn't be too hard to make this work with wake-on-lan instead. We are using the HTTP API instead of the sockets API, since the sockets API seems to change quite a lot. We use standard TrueNAS API keys.
 
