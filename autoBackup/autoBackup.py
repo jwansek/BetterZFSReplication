@@ -39,7 +39,7 @@ class TrueNASAPIClient:
     @staticmethod
     def filter_running_jobs(jobs):
         return list(filter(
-            lambda i: i["method"] == "replication.run" and i["progress"]["percent"] != 100 and not i["state"] == "FAILED",
+            lambda i: i["progress"]["percent"] != 100 and not i["state"] == "FAILED",
             jobs
         ))
         
@@ -60,9 +60,6 @@ class TrueNASAPIClient:
     
     def get_jobs(self):
         return self.base_get("/core/get_jobs")
-    
-    def get_running_replication_jobs(self):
-        return [i for i in self.get_jobs() if i["method"] == "replication.run" and i["progress"]["percent"] != 100 and not i["state"] == "FAILED"]
     
     def get_replication_tasks(self):
         return list(filter(lambda a: a["name"] in self.replication_task_names, self.base_get("/replication")))
