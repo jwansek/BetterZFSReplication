@@ -1,3 +1,4 @@
+import truenas_api_client
 import requests
 import logging
 import dotenv
@@ -188,5 +189,7 @@ def main():
     logging.info("autoBackup procedure completed\n\n")
 
 if __name__ == "__main__":
-    main()
+    # main()
     
+    with truenas_api_client.Client(uri="ws://%s/api/current" % os.environ["MASTER_HOST"]) as c:
+        c.call("auth.login_with_api_key", os.environ["MASTER_KEY"])

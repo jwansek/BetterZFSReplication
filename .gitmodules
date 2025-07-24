@@ -1,6 +1,3 @@
-[submodule "autoBackup/api_client"]
-	path = autoBackup/api_client
-	url = git@github.com:truenas/api_client.git
 [submodule "autoBackup/TasmotaCLI"]
 	path = autoBackup/TasmotaCLI
 	url = git@github.com:jwansek/TasmotaCLI.git
