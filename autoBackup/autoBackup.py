@@ -1,6 +1,8 @@
 import truenas_api_client
+import dataclasses
 import requests
 import logging
+import pickle
 import dotenv
 import json
 import time
@@ -23,7 +25,108 @@ logging.basicConfig(
     ]
 )
 
+class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
+    """Using API keys with a self-signed certificate automatically invalidates them now? So
+    we have to use less secure username and password authentication instead....
+    And attempting to set up a reverse proxy with HAProxy apparently means then the sockets API
+    doesn't work... (see bottom)
+
+    Also, despite what the documentation says, it seems the websockets API doesn't like calls
+    over a long time with the same authentication, so we make a new session and re-authenticate
+    every time we poll the jobs. Yes this is directly contradicting what the documentation tells us
+    to do. Therefore, we serialize the dictionary of currently running jobs so we can make lots of new
+    instances of this object.
+
+    The HTTP API is better in every way, but apparently it will be removed in a future version of TrueNAS
+    (25.10?) hence we have this instead.
+
+    This implementation of the websockets API only works in 25.04 and onwards.
+    """
+    def __init__(self, host, username, password, replication_task_names = None, *args, **kwargs):
+        super().__init__(uri = "ws://%s/api/current" % host, *args, **kwargs)
+        self.host = host
+        self.username = username
+        self.password = password
+
+        if replication_task_names is None:
+            self.replication_task_names = []
+        else:
+            self.replication_task_names = replication_task_names
+
+    def __enter__(self):
+        o = super().__enter__()
+        # We are forced to use username/password instead of API keys if we're using self-certified certificates
+        auth = self.call("auth.login", self.username, self.password)
+        return o
+    
+    def __exit__(self, *args, **kwargs):
+        super().__exit__(*args, **kwargs)
+        logging.info("%s Websocket disconnected" % self.host)
+    
+    def __get_ser_name(self):
+        return ".%s_replication_jobs.pickle" % self.host
+    
+    def __get_running_replication_jobs_ser(self):
+        if os.path.exists(self.__get_ser_name()):
+            with open(self.__get_ser_name(), "rb") as f:
+                return pickle.load(f)
+        else:
+            return {}
+        
+    def __set_running_replication_jobs_ser(self, running_replication_jobs):
+        with open(self.__get_ser_name(), "wb") as f:
+            pickle.dump(running_replication_jobs, f)
+    
+    def get_replication_tasks(self):
+        return list(filter(lambda a: a["name"] in self.replication_task_names, self.call("replication.query")))
+    
+    def run_replication_task(self, task_id):
+        return self.call("replication.run", task_id)
+    
+    @staticmethod
+    def is_ready(host, username, password, *args, **kwargs):
+        try:
+            with truenas_api_client.JSONRPCClient(uri = "ws://%s/api/current" % host, *args, **kwargs) as c:
+                c.call("auth.login", username, password)
+                return c.call("system.ready")
+        except OSError:
+            raise ConnectionError("No route to host")
+    
+    def shutdown(self):
+        return self.call("system.shutdown", "Automatic autoBackup shutdown")
+    
+    def run_all_replication_tasks(self):
+        running_replication_jobs = self.__get_running_replication_jobs_ser()
+
+        for task in self.get_replication_tasks():
+            job_id = self.run_replication_task(task["id"])
+            running_replication_jobs[job_id] = task["name"]
+            logging.info("Started replication task '%s' on '%s' with job id %d" % (task["name"], self.host, job_id))
+
+        self.__set_running_replication_jobs_ser(running_replication_jobs)
+
+    def get_jobs(self):
+        return self.call("core.get_jobs")
+
+    def get_state_of_replication_jobs(self):
+        running_replication_jobs = self.__get_running_replication_jobs_ser()
+        all_complete = True
+        for job in self.get_jobs():
+            if job["id"] in running_replication_jobs.keys():
+                if job["state"] == "RUNNING":
+                    all_complete = False
+                logging.info("Replication job '%s' on '%s' is currently '%s' (%d%%)" % (
+                    running_replication_jobs[job["id"]], self.host, job["state"], job["progress"]["percent"]
+                ))
+
+        if all_complete:
+            os.remove(self.__get_ser_name())
+            logging.info("No more running replication jobs on '%s'" % self.host)
+        return all_complete
+
 class TrueNASAPIClient:
+    """Class for the REST HTTP API, which sadly will be removed soon :c
+    """
     def __init__(self, host, api_key, replication_task_names = None):
         self.host = host
         self.base_url = "http://%s/api/v2.0" % host
@@ -102,7 +205,6 @@ class TrueNASAPIClient:
         return all_complete
 
 def check_if_all_complete(truenasclients):
-    logging.info("Slave plug '%s' is using %dw of power" % (os.environ["SLAVE_PLUG_FRIENDLYNAME"], get_mqtt().switch_energy['Power']))
     all_complete = True
     for truenas in truenasclients:
         if not truenas.get_state_of_replication_jobs():
@@ -119,12 +221,40 @@ def get_mqtt(message = None):
     )
 
 def wait_for_slave(slave):
+    """Wait for a TrueNAS REST HTTP Client to be ready
+
+    Args:
+        slave (TrueNASAPIClient): A TrueNAS REST client
+    """
     while True:
         time.sleep(int(os.environ["POLLING_RATE"]))
         try:
-            logging.info("Slave is ready: " + str(slave.is_ready()))
+            ready = slave.is_ready()
+            logging.info("Slave is ready: " + str(ready))
+            if not ready:
+                continue
         except requests.exceptions.ConnectionError:
             logging.info("'%s' hasn't booted, waiting for %d more seconds" % (slave.host, int(os.environ["POLLING_RATE"])))
+        else:
+            break
+    logging.info("Slave TrueNAS has booted and is ready for API requests")
+
+def wait_for_sockets_slave():
+    """Wait for the slave's websockets API to be ready
+    """
+    while True:
+        time.sleep(int(os.environ["POLLING_RATE"]))
+        try:
+            ready = TrueNASWebsocketsClient.is_ready(
+                host = os.environ["SLAVE_HOST"], 
+                username = os.environ["SLAVE_USERNAME"],
+                password = os.environ["SLAVE_PASSWORD"]
+            )
+            logging.info("Slave is ready: " + str(ready))
+            if not ready:
+                continue
+        except ConnectionError:
+            logging.info("'%s' hasn't booted, waiting for %d more seconds" % (os.environ["SLAVE_HOST"], int(os.environ["POLLING_RATE"])))
         else:
             break
     logging.info("Slave TrueNAS has booted and is ready for API requests")
@@ -150,11 +280,6 @@ def main():
         tasks = os.environ["SLAVE_REPLICATION_TASKS"].split(",")
     else:
         tasks = []
-    slave = TrueNASAPIClient(
-        host = os.environ["SLAVE_HOST"], 
-        api_key = os.environ["SLAVE_KEY"], 
-        replication_task_names = tasks
-    )
 
     logging.info("Began autoBackup procedure")
     m = get_mqtt()
@@ -165,31 +290,71 @@ def main():
         was_already_on = False
         get_mqtt("ON")
         logging.info("Turned on the slave plug. Now waiting for it to boot")
-        wait_for_slave(slave)
+        # wait_for_slave(slave)
+        wait_for_sockets_slave()
 
-    master.run_all_replication_tasks()
-    slave.run_all_replication_tasks()
-    # while (not master.get_state_of_replication_jobs()) or (not slave.get_state_of_replication_jobs()):
-    while not check_if_all_complete([master, slave]):
+    with TrueNASWebsocketsClient(
+        host = os.environ["SLAVE_HOST"], 
+        username = os.environ["SLAVE_USERNAME"],
+        password = os.environ["SLAVE_PASSWORD"],
+        replication_task_names = tasks
+    ) as slave:
+        master.run_all_replication_tasks()
+        slave.run_all_replication_tasks()
+        
+    while True:
+        with TrueNASWebsocketsClient(
+            host = os.environ["SLAVE_HOST"], 
+            username = os.environ["SLAVE_USERNAME"],
+            password = os.environ["SLAVE_PASSWORD"],
+            replication_task_names = tasks
+        ) as slave:
+            if check_if_all_complete([master, slave]):
+                break
+
+        logging.info("Slave plug '%s' is using %dw of power" % (os.environ["SLAVE_PLUG_FRIENDLYNAME"], get_mqtt().switch_energy['Power']))
         time.sleep(int(os.environ["POLLING_RATE"]))
+
     logging.info("All replication jobs on all hosts complete")
 
     if was_already_on:
         logging.info("The slave TrueNAS was turned on not by us, so stopping here")
     else:
         logging.info("The slave TrueNAS was turned on by us, so starting the shutdown procedure")
-        logging.info(json.dumps(slave.shutdown(), indent = 4))
+        with TrueNASWebsocketsClient(
+            host = os.environ["SLAVE_HOST"], 
+            username = os.environ["SLAVE_USERNAME"],
+            password = os.environ["SLAVE_PASSWORD"],
+            replication_task_names = tasks
+        ) as slave:
+            logging.info(json.dumps(slave.shutdown(), indent = 4))
 
-        # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
-        # then turn off the power to it
-        wait_till_idle_power()
-        get_mqtt("OFF")
-        logging.info("Turned off the slave's plug")
+    # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
+    # then turn off the power to it
+    wait_till_idle_power()
+    get_mqtt("OFF")
+    logging.info("Turned off the slave's plug")
 
     logging.info("autoBackup procedure completed\n\n")
 
 if __name__ == "__main__":
-    # main()
+    main()
     
-    with truenas_api_client.Client(uri="ws://%s/api/current" % os.environ["MASTER_HOST"]) as c:
-        c.call("auth.login_with_api_key", os.environ["MASTER_KEY"])
+    # get_mqtt("ON")
+    # wait_for_sockets_slave()
+
+    # with TrueNASWebsocketsClient(
+    #     host = os.environ["SLAVE_HOST"], 
+    #     username = os.environ["SLAVE_USERNAME"],
+    #     password = os.environ["SLAVE_PASSWORD"],
+    #     replication_task_names = os.environ["SLAVE_REPLICATION_TASKS"].split(",")
+    # ) as c:
+    #     c.running_replication_jobs = {90: "foo", 91: "bar"}
+    #     print(c.get_state_of_replication_jobs())
+
+    # with truenas_api_client.Client(uri="ws://backuptruenas.local.eda.gay/api/current") as c:
+    #     print(c.call("auth.login", "root", "securebackdoor"))
+    #     print(json.dumps(c.call("replication.query"), indent=4))
+
+
+    

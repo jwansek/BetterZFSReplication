@@ -1,3 +1,6 @@
 [submodule "autoBackup/TasmotaCLI"]
 	path = autoBackup/TasmotaCLI
 	url = git@github.com:jwansek/TasmotaCLI.git
+[submodule "api_client"]
+	path = api_client
+	url = git@github.com:monitorjbl/api_client.git
