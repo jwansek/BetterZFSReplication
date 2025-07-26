@@ -1,5 +1,6 @@
 import truenas_api_client
-import dataclasses
+import subprocess
+import datetime
 import requests
 import logging
 import pickle
@@ -63,19 +64,19 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
         super().__exit__(*args, **kwargs)
         logging.info("%s Websocket disconnected" % self.host)
     
-    def __get_ser_name(self):
-        return ".%s_replication_jobs.pickle" % self.host
+    def _get_job_serialized_name(self, job_type):
+        return os.path.join(os.path.dirname(__file__), ".%s_%s_jobs.pickle" % (self.host, job_type))
     
-    def __get_running_replication_jobs_ser(self):
-        if os.path.exists(self.__get_ser_name()):
-            with open(self.__get_ser_name(), "rb") as f:
+    def _get_serialized_jobs(self, job_type):
+        if os.path.exists(self._get_job_serialized_name(job_type)):
+            with open(self._get_job_serialized_name(job_type), "rb") as f:
                 return pickle.load(f)
         else:
             return {}
         
-    def __set_running_replication_jobs_ser(self, running_replication_jobs):
-        with open(self.__get_ser_name(), "wb") as f:
-            pickle.dump(running_replication_jobs, f)
+    def _set_serialized_jobs(self, jobs, job_name):
+        with open(self._get_job_serialized_name(job_name), "wb") as f:
+            pickle.dump(jobs, f)
     
     def get_replication_tasks(self):
         return list(filter(lambda a: a["name"] in self.replication_task_names, self.call("replication.query")))
@@ -96,31 +97,44 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
         return self.call("system.shutdown", "Automatic autoBackup shutdown")
     
     def run_all_replication_tasks(self):
-        running_replication_jobs = self.__get_running_replication_jobs_ser()
+        running_replication_jobs = self._get_serialized_jobs("replication")
 
         for task in self.get_replication_tasks():
             job_id = self.run_replication_task(task["id"])
             running_replication_jobs[job_id] = task["name"]
             logging.info("Started replication task '%s' on '%s' with job id %d" % (task["name"], self.host, job_id))
 
-        self.__set_running_replication_jobs_ser(running_replication_jobs)
+        self._set_serialized_jobs(running_replication_jobs, "replication")
+
+    def scrub_pools(self, pools):
+        running_jobs = self._get_serialized_jobs("scrub")
+
+        for pool_name in pools:
+            job_id = self.call("pool.scrub.scrub", pool_name)
+            running_jobs[job_id] = pool_name
+            logging.info("Started scrub job on pool '%s' on host '%s' with job id %d" % (pool_name, self.host, job_id))
+
+        self._set_serialized_jobs(running_jobs, "scrub")
 
     def get_jobs(self):
         return self.call("core.get_jobs")
-
+    
     def get_state_of_replication_jobs(self):
-        running_replication_jobs = self.__get_running_replication_jobs_ser()
+        return self.get_state_of_jobs("replication")
+
+    def get_state_of_jobs(self, job_type):
+        running_jobs = self._get_serialized_jobs(job_type)
         all_complete = True
         for job in self.get_jobs():
-            if job["id"] in running_replication_jobs.keys():
+            if job["id"] in running_jobs.keys():
                 if job["state"] == "RUNNING":
                     all_complete = False
-                logging.info("Replication job '%s' on '%s' is currently '%s' (%d%%)" % (
-                    running_replication_jobs[job["id"]], self.host, job["state"], job["progress"]["percent"]
+                logging.info("%s job '%s' on '%s' is currently '%s' (%d%%)" % (
+                    job_type, running_jobs[job["id"]], self.host, job["state"], job["progress"]["percent"]
                 ))
 
         if all_complete:
-            os.remove(self.__get_ser_name())
+            os.remove(self._get_job_serialized_name(job_type))
             logging.info("No more running replication jobs on '%s'" % self.host)
         return all_complete
 
@@ -267,6 +281,9 @@ def wait_till_idle_power():
             break
 
 def main():
+    start_time = datetime.datetime.now()
+    subprocess.run(["rm", "-f", os.path.join(os.path.dirname(__file__), "*_replication_jobs.pickle")])
+
     if os.environ["MASTER_REPLICATION_TASKS"] != "":
         tasks = os.environ["MASTER_REPLICATION_TASKS"].split(",")
     else:
@@ -329,13 +346,13 @@ def main():
         ) as slave:
             logging.info(json.dumps(slave.shutdown(), indent = 4))
 
-    # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
-    # then turn off the power to it
-    wait_till_idle_power()
-    get_mqtt("OFF")
-    logging.info("Turned off the slave's plug")
+        # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
+        # then turn off the power to it
+        wait_till_idle_power()
+        get_mqtt("OFF")
+        logging.info("Turned off the slave's plug")
 
-    logging.info("autoBackup procedure completed\n\n")
+    logging.info("autoBackup backup procedure completed. Took %s\n\n" % str(datetime.datetime.now() - start_time))
 
 if __name__ == "__main__":
     main()
