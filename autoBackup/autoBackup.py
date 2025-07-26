@@ -339,22 +339,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-    # get_mqtt("ON")
-    # wait_for_sockets_slave()
-
-    # with TrueNASWebsocketsClient(
-    #     host = os.environ["SLAVE_HOST"], 
-    #     username = os.environ["SLAVE_USERNAME"],
-    #     password = os.environ["SLAVE_PASSWORD"],
-    #     replication_task_names = os.environ["SLAVE_REPLICATION_TASKS"].split(",")
-    # ) as c:
-    #     c.running_replication_jobs = {90: "foo", 91: "bar"}
-    #     print(c.get_state_of_replication_jobs())
-
-    # with truenas_api_client.Client(uri="ws://backuptruenas.local.eda.gay/api/current") as c:
-    #     print(c.call("auth.login", "root", "securebackdoor"))
-    #     print(json.dumps(c.call("replication.query"), indent=4))
 
 
     
