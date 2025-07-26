@@ -1,14 +1,12 @@
-version: "3"
-
 services:
-    autoReplicate:
-        container_name: auto_replicate
+    autoBackup:
+        container_name: auto_backup
         volumes:
             - ./logs/:/app/logs
         env_file:
             - ./.env
         restart: unless-stopped
-        image: reg.reaweb.uk/auto_replicate
+        image: reg.reaweb.uk/auto_backup
         build:
             context: .
             dockerfile: Dockerfile
