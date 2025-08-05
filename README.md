@@ -20,7 +20,7 @@ it is shut down, and once the plug is pulling 0w, which implies the TrueNAS has 
 If the Tasmota MQTT plug was already on when the script starts, it implies that the `slave` TrueNAS was started manually, so it won't automatically
 be switched off.
 
-It is recommended to run ZFS scrub tasks manually occasionally, since they probably won't be run automatically by TrueNAS.
+~~It is recommended to run ZFS scrub tasks manually occasionally, since they probably won't be run automatically by TrueNAS.~~ A script to automatically run ZFS scrub jobs every month has been added.
 
 A Dockerfile is provided so you can automatically run this script as a cronjob.
 
