@@ -134,8 +134,11 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
                 ))
 
         if all_complete:
-            os.remove(self._get_job_serialized_name(job_type))
-            logging.info("No more running %s jobs on '%s'" % (job_type, self.host))
+            if os.path.exists(self._get_job_serialized_name(job_type)):
+                os.remove(self._get_job_serialized_name(job_type))
+                logging.info("All %s jobs on '%s' completed" % (job_type, self.host))
+            else:
+                logging.info("There were no %s jobs on '%s'. Perhaps they already all finished." % (job_type, self.host))
         return all_complete
 
 class TrueNASAPIClient:
