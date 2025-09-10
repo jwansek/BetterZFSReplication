@@ -1,8 +1,6 @@
-FROM ubuntu:22.04
-ENV TZ=Europe/London
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-RUN apt-get update -y
-RUN apt-get install -y python3-pip iputils-ping cron git
+FROM reg.reaweb.uk/cron 
+# https://github.com/jwansek/cron/
+
 RUN git clone https://github.com/monitorjbl/api_client.git /api_client && cd /api_client && python3 setup.py install && rm -rf /api_client
 COPY . /app
 WORKDIR /app
