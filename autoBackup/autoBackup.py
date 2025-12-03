@@ -250,7 +250,7 @@ def wait_for_slave(slave):
             logging.info("Slave is ready: " + str(ready))
             if not ready:
                 continue
-        except requests.exceptions.ConnectionError:
+        except (requests.exceptions.ConnectionError, truenas_api_client.exc.ClientException):
             logging.info("'%s' hasn't booted, waiting for %d more seconds" % (slave.host, int(os.environ["POLLING_RATE"])))
         else:
             break
