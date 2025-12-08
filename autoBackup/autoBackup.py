@@ -62,7 +62,7 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
     
     def __exit__(self, *args, **kwargs):
         super().__exit__(*args, **kwargs)
-        logging.info("%s Websocket disconnected" % self.host)
+        # logging.info("%s Websocket disconnected" % self.host)
     
     def _get_job_serialized_name(self, job_type):
         return os.path.join(os.path.dirname(__file__), ".%s_%s_jobs.pickle" % (self.host, job_type))
@@ -302,7 +302,7 @@ def main():
     else:
         tasks = []
 
-    logging.info("Began autoBackup procedure")
+    logging.info("\n\nBegan autoBackup procedure")
     m = get_mqtt()
     logging.info("Slave plug '%s' is currently %s" % (m.friendlyname, m.switch_power))
     if m.switch_power == "ON":
@@ -348,7 +348,8 @@ def main():
             password = os.environ["SLAVE_PASSWORD"],
             replication_task_names = tasks
         ) as slave:
-            logging.info(json.dumps(slave.shutdown(), indent = 4))
+            slave.shutdown()
+            # logging.info(json.dumps(slave.shutdown(), indent = 4))
 
         # wait until the slave TrueNAS is using 0w of power, which implies it has finished shutting down,
         # then turn off the power to it
@@ -356,7 +357,7 @@ def main():
         get_mqtt("OFF")
         logging.info("Turned off the slave's plug")
 
-    logging.info("autoBackup backup procedure completed. Took %s\n\n" % str(datetime.datetime.now() - start_time))
+    logging.info("autoBackup backup procedure completed. Took %s" % str(datetime.datetime.now() - start_time))
 
 if __name__ == "__main__":
     main()
