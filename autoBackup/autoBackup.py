@@ -234,6 +234,7 @@ def get_mqtt(message = None):
         username = os.environ["MQTT_USER"],
         password = os.environ["MQTT_PASSWORD"],
         friendlyname = os.environ["SLAVE_PLUG_FRIENDLYNAME"],
+        verbose = False,
         message = message
     )
 
