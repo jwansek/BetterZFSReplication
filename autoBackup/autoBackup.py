@@ -289,18 +289,13 @@ def main():
     subprocess.run(["rm", "-f", os.path.join(os.path.dirname(__file__), "*_replication_jobs.pickle")])
 
     if os.environ["MASTER_REPLICATION_TASKS"] != "":
-        tasks = os.environ["MASTER_REPLICATION_TASKS"].split(",")
+        master_tasks = os.environ["MASTER_REPLICATION_TASKS"].split(",")
     else:
-        tasks = []
-    master = TrueNASAPIClient(
-        host = os.environ["MASTER_HOST"], 
-        api_key = os.environ["MASTER_KEY"], 
-        replication_task_names = tasks
-    )
+        master_tasks = []
     if os.environ["SLAVE_REPLICATION_TASKS"] != "":
-        tasks = os.environ["SLAVE_REPLICATION_TASKS"].split(",")
+        slave_tasks = os.environ["SLAVE_REPLICATION_TASKS"].split(",")
     else:
-        tasks = []
+        slave_tasks = []
 
     logging.info("\n\nBegan autoBackup procedure")
     m = get_mqtt()
@@ -314,22 +309,34 @@ def main():
         # wait_for_slave(slave)
         wait_for_sockets_slave()
 
-    with TrueNASWebsocketsClient(
-        host = os.environ["SLAVE_HOST"], 
-        username = os.environ["SLAVE_USERNAME"],
-        password = os.environ["SLAVE_PASSWORD"],
-        replication_task_names = tasks
-    ) as slave:
+    with (TrueNASWebsocketsClient(
+            host = os.environ["SLAVE_HOST"], 
+            username = os.environ["SLAVE_USERNAME"],
+            password = os.environ["SLAVE_PASSWORD"],
+            replication_task_names = slave_tasks
+        ) as slave, TrueNASWebsocketsClient(
+            host = os.environ["MASTER_HOST"], 
+            username = os.environ["MASTER_USERNAME"],
+            password = os.environ["MASTER_PASSWORD"],
+            replication_task_names = master_tasks
+        ) as master
+    ):
         master.run_all_replication_tasks()
         slave.run_all_replication_tasks()
         
     while True:
-        with TrueNASWebsocketsClient(
-            host = os.environ["SLAVE_HOST"], 
-            username = os.environ["SLAVE_USERNAME"],
-            password = os.environ["SLAVE_PASSWORD"],
-            replication_task_names = tasks
-        ) as slave:
+        with (TrueNASWebsocketsClient(
+                host = os.environ["SLAVE_HOST"], 
+                username = os.environ["SLAVE_USERNAME"],
+                password = os.environ["SLAVE_PASSWORD"],
+                replication_task_names = slave_tasks
+            ) as slave, TrueNASWebsocketsClient(
+                host = os.environ["MASTER_HOST"], 
+                username = os.environ["MASTER_USERNAME"],
+                password = os.environ["MASTER_PASSWORD"],
+                replication_task_names = master_tasks
+            ) as master
+        ):
             if check_if_all_complete([master, slave]):
                 break
 
@@ -346,7 +353,7 @@ def main():
             host = os.environ["SLAVE_HOST"], 
             username = os.environ["SLAVE_USERNAME"],
             password = os.environ["SLAVE_PASSWORD"],
-            replication_task_names = tasks
+            replication_task_names = slave_tasks
         ) as slave:
             slave.shutdown()
             # logging.info(json.dumps(slave.shutdown(), indent = 4))
