@@ -281,7 +281,7 @@ def wait_till_idle_power():
     while True:
         p = get_mqtt().switch_energy['Power']
         logging.info("'%s' plug is using %dw of power" % (os.environ["SLAVE_PLUG_FRIENDLYNAME"], p))
-        if p == 0:
+        if p <= 5:
             break
 
 def main():
@@ -338,12 +338,15 @@ def main():
             ) as master
         ):
             if check_if_all_complete([master, slave]):
+                logging.info("All replication jobs on all hosts complete")
+                break
+
+            if start_time + datetime.timedelta(hours = int(os.environ["GIVE_UP_AFTER_HOURS"])) < datetime.datetime.now():
+                logging.info("Replication took longer than %dh, so gave up." % int(os.environ["GIVE_UP_AFTER_HOURS"]))
                 break
 
         logging.info("Slave plug '%s' is using %dw of power" % (os.environ["SLAVE_PLUG_FRIENDLYNAME"], get_mqtt().switch_energy['Power']))
         time.sleep(int(os.environ["POLLING_RATE"]))
-
-    logging.info("All replication jobs on all hosts complete")
 
     if was_already_on:
         logging.info("The slave TrueNAS was turned on not by us, so stopping here")
