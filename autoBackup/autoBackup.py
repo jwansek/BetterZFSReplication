@@ -43,8 +43,17 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
 
     This implementation of the websockets API only works in 25.04 and onwards.
     """
+
+    num_retries = 3
+
     def __init__(self, host, username, password, replication_task_names = None, *args, **kwargs):
-        super().__init__(uri = "ws://%s/api/current" % host, *args, **kwargs)
+        for i in range(self.num_retries - 1):
+            try:
+                super().__init__(uri = "ws://%s/api/current" % host, *args, **kwargs)
+            except truenas_api_client.exc.ClientException as e:
+                logging.info("'%s', trying again..." % str(e))
+            else:
+                break
         self.host = host
         self.username = username
         self.password = password
@@ -55,10 +64,15 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
             self.replication_task_names = replication_task_names
 
     def __enter__(self):
-        o = super().__enter__()
-        # We are forced to use username/password instead of API keys if we're using self-certified certificates
-        auth = self.call("auth.login", self.username, self.password)
-        return o
+        for i in range(self.num_retries - 1):
+            try:
+                o = super().__enter__()
+                # We are forced to use username/password instead of API keys if we're using self-certified certificates
+                auth = self.call("auth.login", self.username, self.password)
+                return o
+            except truenas_api_client.exc.ClientException as e:
+                logging.info("'%s', trying again..." % str(e))
+        raise ConnectionError("Connection timed out")
     
     def __exit__(self, *args, **kwargs):
         super().__exit__(*args, **kwargs)
