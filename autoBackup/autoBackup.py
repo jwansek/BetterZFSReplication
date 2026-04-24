@@ -1,5 +1,6 @@
 import truenas_api_client
 import subprocess
+import websocket
 import datetime
 import requests
 import logging
@@ -50,10 +51,12 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
         for i in range(self.num_retries - 1):
             try:
                 super().__init__(uri = "ws://%s/api/current" % host, *args, **kwargs)
-            except truenas_api_client.exc.ClientException as e:
-                logging.info("'%s', trying again..." % str(e))
+            except (truenas_api_client.exc.ClientException, TimeoutError, websocket._exceptions.WebSocketTimeoutException) as e:
+                logging.info("'%s', connection to host '%s' was iffy, trying again..." % (host, str(e)))
             else:
                 break
+        else:
+            raise ConnectionError("Could not connect to host '%s' after %d retries :c" % (host, self.num_retries))
         self.host = host
         self.username = username
         self.password = password
@@ -70,9 +73,9 @@ class TrueNASWebsocketsClient(truenas_api_client.JSONRPCClient):
                 # We are forced to use username/password instead of API keys if we're using self-certified certificates
                 auth = self.call("auth.login", self.username, self.password)
                 return o
-            except truenas_api_client.exc.ClientException as e:
+            except (truenas_api_client.exc.ClientException, TimeoutError, websocket._exceptions.WebSocketTimeoutException) as e:
                 logging.info("'%s', trying again..." % str(e))
-        raise ConnectionError("Connection timed out")
+        raise ConnectionError("Sowwee, connection timed out :c")
     
     def __exit__(self, *args, **kwargs):
         super().__exit__(*args, **kwargs)
